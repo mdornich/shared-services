@@ -1,0 +1,19 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "shared-services"
+version = "1.0.0"
+description = "Shared services for Supabase auth and company detection"
+readme = "README.md"
+requires-python = ">=3.8"
+dependencies = [
+    "supabase>=2.0.0",
+    "pydantic>=2.0.0",
+    "python-dotenv>=1.0.0",
+    "sqlalchemy>=2.0.0",
+]
+
+[tool.setuptools.packages.find]
+include = ["shared_services*"]
