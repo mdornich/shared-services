@@ -1,298 +1,94 @@
 """
 Magic Link Authentication Service
-Ported from aiBA-1 magicLinkService.ts to Python
 """
+import os
 from typing import Optional, Dict, Any
 from datetime import datetime
 import logging
-from ..core.supabase_config import supabase_auth, supabase_admin, MAGIC_LINK_REDIRECT
-from ..db.models import User
-from ..db.session import SessionLocal
+from supabase import create_client, Client
 
 logger = logging.getLogger(__name__)
 
 
-async def send_magic_link(
-    email: str, 
-    redirect_to: Optional[str] = None, 
-    full_name: Optional[str] = None
-) -> Dict[str, Any]:
-    """
-    Send a magic link to the user's email.
+class MagicLinkService:
+    """Service for handling magic link authentication with Supabase."""
     
-    Args:
-        email: User's email address
-        redirect_to: Optional custom redirect URL after authentication
-        full_name: Optional user's full name for profile creation
-    
-    Returns:
-        Dict with success status and message
-    """
-    try:
-        # Parse full name into first and last
-        first_name = ""
-        last_name = ""
-        if full_name:
-            name_parts = full_name.strip().split(" ")
-            first_name = name_parts[0] if name_parts else ""
-            # Everything after the first word becomes the last name
-            last_name = " ".join(name_parts[1:]) if len(name_parts) > 1 else ""
+    def __init__(self):
+        """Initialize Supabase client."""
+        self.supabase_url = os.getenv("SUPABASE_URL")
+        self.supabase_anon_key = os.getenv("SUPABASE_ANON_KEY")
+        self.supabase_service_key = os.getenv("SUPABASE_SERVICE_KEY")
         
-        # Send magic link via Supabase Auth
-        # This will send "Confirm signup" email for new users,
-        # and "Magic Link" email for existing users
-        response = supabase_auth.auth.sign_in_with_otp({
-            "email": email,
-            "options": {
-                "email_redirect_to": redirect_to or MAGIC_LINK_REDIRECT,
-                "should_create_user": True,  # Creates user if doesn't exist
-                "data": {
-                    "source": "ai_assessment",  # Track where users come from
-                    "first_name": first_name,
-                    "last_name": last_name,
-                    "full_name": full_name
+        if not self.supabase_url or not self.supabase_anon_key:
+            raise ValueError("Missing Supabase environment variables")
+        
+        # Create Supabase client
+        self.client: Client = create_client(self.supabase_url, self.supabase_anon_key)
+        self.frontend_url = os.getenv("FRONTEND_URL", "http://localhost:3000")
+        self.redirect_url = f"{self.frontend_url}/auth/callback"
+    
+    async def send_magic_link(
+        self, 
+        email: str, 
+        redirect_to: Optional[str] = None, 
+        full_name: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """Send a magic link to the user's email."""
+        try:
+            # Parse full name
+            first_name = ""
+            last_name = ""
+            if full_name:
+                name_parts = full_name.strip().split(" ")
+                first_name = name_parts[0] if name_parts else ""
+                last_name = " ".join(name_parts[1:]) if len(name_parts) > 1 else ""
+            
+            # Send magic link
+            response = self.client.auth.sign_in_with_otp({
+                "email": email,
+                "options": {
+                    "email_redirect_to": redirect_to or self.redirect_url,
+                    "should_create_user": True,
+                    "data": {
+                        "source": "ai_assessment",
+                        "first_name": first_name,
+                        "last_name": last_name,
+                        "full_name": full_name
+                    }
                 }
-            }
-        })
-        
-        if response.error:
-            logger.error(f"Magic link error: {response.error}")
-            return {
-                "success": False,
-                "error": response.error.message
-            }
-        
-        return {
-            "success": True,
-            "data": response.data,
-            "message": "Magic link sent successfully"
-        }
-        
-    except Exception as e:
-        logger.error(f"Unexpected error sending magic link: {e}")
-        return {
-            "success": False,
-            "error": "Failed to send magic link"
-        }
-
-
-async def verify_magic_link(token: str, type: str = "magiclink") -> Dict[str, Any]:
-    """
-    Verify the magic link token and create a session.
-    
-    Args:
-        token: The token from the magic link
-        type: Token type (magiclink, signup, recovery, etc.)
-    
-    Returns:
-        Dict with success status, session, and user data
-    """
-    try:
-        response = supabase_auth.auth.verify_otp({
-            "token_hash": token,
-            "type": type
-        })
-        
-        if response.error:
-            logger.error(f"Token verification error: {response.error}")
-            return {
-                "success": False,
-                "error": response.error.message
-            }
-        
-        return {
-            "success": True,
-            "session": response.session,
-            "user": response.user
-        }
-        
-    except Exception as e:
-        logger.error(f"Unexpected error verifying token: {e}")
-        return {
-            "success": False,
-            "error": "Failed to verify token"
-        }
-
-
-async def get_or_create_profile(
-    user_id: str, 
-    email: str, 
-    metadata: Optional[Dict[str, Any]] = None
-) -> Dict[str, Any]:
-    """
-    Get or create user profile in the users table.
-    
-    Args:
-        user_id: Supabase auth user ID
-        email: User's email address
-        metadata: Optional metadata from auth (first_name, last_name, etc.)
-    
-    Returns:
-        Dict with success status and user profile
-    """
-    db = SessionLocal()
-    try:
-        # Check if user exists in users table
-        existing_user = db.query(User).filter(User.auth_user_id == user_id).first()
-        
-        if existing_user:
+            })
+            
+            if hasattr(response, 'error') and response.error:
+                logger.error(f"Magic link error: {response.error}")
+                return {"success": False, "error": response.error.message}
+            
             return {
                 "success": True,
-                "profile": existing_user,
-                "is_new": False
+                "data": response.data if hasattr(response, 'data') else None,
+                "message": "Magic link sent successfully"
             }
-        
-        # Create new user if doesn't exist
-        new_user = User(
-            email=email,
-            auth_user_id=user_id,
-            first_name=metadata.get("first_name") if metadata else None,
-            last_name=metadata.get("last_name") if metadata else None,
-            created_at=datetime.utcnow(),
-            updated_at=datetime.utcnow()
-        )
-        
-        db.add(new_user)
-        db.commit()
-        db.refresh(new_user)
-        
-        return {
-            "success": True,
-            "profile": new_user,
-            "is_new": True
-        }
-        
-    except Exception as e:
-        logger.error(f"Error managing user profile: {e}")
-        db.rollback()
-        return {
-            "success": False,
-            "error": "Failed to manage user profile"
-        }
-    finally:
-        db.close()
-
-
-async def verify_token(token: str) -> Optional[Dict[str, Any]]:
-    """
-    Verify a JWT token and return the user.
+            
+        except Exception as e:
+            logger.error(f"Error sending magic link: {e}")
+            return {"success": False, "error": str(e)}
     
-    Args:
-        token: JWT token to verify
-    
-    Returns:
-        User data if valid, None otherwise
-    """
-    try:
-        response = supabase_auth.auth.get_user(token)
-        
-        if response.error or not response.user:
-            logger.error(f"Token verification failed: {response.error}")
-            return None
-        
-        return response.user
-        
-    except Exception as e:
-        logger.error(f"Error verifying token: {e}")
-        return None
-
-
-async def get_profile(user_id: str) -> Optional[User]:
-    """
-    Get user profile by auth user ID.
-    
-    Args:
-        user_id: Supabase auth user ID
-    
-    Returns:
-        User profile if found, None otherwise
-    """
-    db = SessionLocal()
-    try:
-        user = db.query(User).filter(User.auth_user_id == user_id).first()
-        return user
-    except Exception as e:
-        logger.error(f"Error fetching user: {e}")
-        return None
-    finally:
-        db.close()
-
-
-async def update_profile(user_id: str, updates: Dict[str, Any]) -> Dict[str, Any]:
-    """
-    Update user profile with name and company.
-    
-    Args:
-        user_id: Supabase auth user ID
-        updates: Dict with name and/or company fields
-    
-    Returns:
-        Dict with success status and updated profile
-    """
-    db = SessionLocal()
-    try:
-        user = db.query(User).filter(User.auth_user_id == user_id).first()
-        
-        if not user:
+    async def verify_magic_link(self, token: str, type: str = "magiclink") -> Dict[str, Any]:
+        """Verify the magic link token."""
+        try:
+            response = self.client.auth.verify_otp({
+                "token_hash": token,
+                "type": type
+            })
+            
+            if hasattr(response, 'error') and response.error:
+                return {"success": False, "error": response.error.message}
+            
             return {
-                "success": False,
-                "error": "User not found"
+                "success": True,
+                "session": response.session if hasattr(response, 'session') else None,
+                "user": response.user if hasattr(response, 'user') else None
             }
-        
-        # Parse name into first_name and last_name if provided
-        if "name" in updates:
-            name_parts = updates["name"].strip().split(" ")
-            user.first_name = name_parts[0] if name_parts else ""
-            user.last_name = " ".join(name_parts[1:]) if len(name_parts) > 1 else ""
-        
-        if "company" in updates:
-            # Note: The users table doesn't have a company field in the schema
-            # This would need to be added or handled differently
-            pass
-        
-        user.updated_at = datetime.utcnow()
-        
-        db.commit()
-        db.refresh(user)
-        
-        return {
-            "success": True,
-            "profile": user
-        }
-        
-    except Exception as e:
-        logger.error(f"Error updating user: {e}")
-        db.rollback()
-        return {
-            "success": False,
-            "error": "Failed to update user"
-        }
-    finally:
-        db.close()
-
-
-async def is_profile_complete(user_id: str) -> bool:
-    """
-    Check if user has completed profile (has first_name and email).
-    
-    Args:
-        user_id: Supabase auth user ID
-    
-    Returns:
-        True if profile is complete, False otherwise
-    """
-    db = SessionLocal()
-    try:
-        user = db.query(User).filter(User.auth_user_id == user_id).first()
-        
-        if not user:
-            return False
-        
-        # Profile is complete if they have first_name and email
-        return bool(user.first_name and user.email)
-        
-    except Exception as e:
-        logger.error(f"Error checking profile completion: {e}")
-        return False
-    finally:
-        db.close()
+            
+        except Exception as e:
+            logger.error(f"Error verifying token: {e}")
+            return {"success": False, "error": str(e)}

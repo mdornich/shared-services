@@ -1,0 +1,29 @@
+Metadata-Version: 2.4
+Name: shared-services
+Version: 1.0.0
+Summary: Shared services for Supabase auth and company detection
+Requires-Python: >=3.8
+Description-Content-Type: text/markdown
+Requires-Dist: supabase>=2.0.0
+Requires-Dist: pydantic>=2.0.0
+Requires-Dist: python-dotenv>=1.0.0
+Requires-Dist: sqlalchemy>=2.0.0
+
+# Shared Services
+
+Reusable services for all projects:
+- Magic Link Authentication (Supabase)
+- Company Detection from emails
+
+## Installation
+
+```bash
+pip install git+https://github.com/mdornich/shared-services.git@v1.0.0
+```
+
+## Usage
+
+```python
+from shared_services.supabase_auth import MagicLinkService
+from shared_services.company_detection import CompanyDetector
+```

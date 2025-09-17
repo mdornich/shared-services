@@ -1,0 +1,12 @@
+README.md
+pyproject.toml
+shared_services/__init__.py
+shared_services.egg-info/PKG-INFO
+shared_services.egg-info/SOURCES.txt
+shared_services.egg-info/dependency_links.txt
+shared_services.egg-info/requires.txt
+shared_services.egg-info/top_level.txt
+shared_services/company_detection/__init__.py
+shared_services/company_detection/detector.py
+shared_services/supabase_auth/__init__.py
+shared_services/supabase_auth/magic_link.py
