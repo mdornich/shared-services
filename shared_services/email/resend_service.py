@@ -47,7 +47,7 @@ class ResendService:
             raise ValueError("Resend API key is required")
         
         resend.api_key = self.api_key
-        self.from_email = os.getenv('RESEND_FROM_EMAIL', 'noreply@yourdomain.com')
+        self.from_email = os.getenv('RESEND_FROM_EMAIL', 'admin@stablemischief.ai')
         
     def send_email(
         self,
